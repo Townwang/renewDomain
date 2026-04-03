@@ -12,46 +12,39 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/run") {
-      // 流式逐行返回日志
       return new Response(
         new ReadableStream({
           async start(controller) {
-            const log = (msg) => {
+            const send = (msg) => {
               console.log(msg);
               controller.enqueue(`data: ${JSON.stringify(msg)}\n\n`);
             };
 
             try {
-              log("=== 开始续期 ===");
-
-              const list = await listDomains(log);
+              send("=== 开始续期 ===");
+              const list = await listDomains(send);
               if (!list || list.length === 0) {
-                log("无活跃子域名");
-                controller.close();
+                send("无活跃子域名");
                 return;
               }
-
-              log(`找到 ${list.length} 个活跃子域名`);
+              send(`找到 ${list.length} 个活跃子域名`);
 
               for (const item of list) {
                 const id = item.id;
-                const sub = item.subdomain;
                 const fullDomain = item.full_domain;
-                log(`处理: ${fullDomain} (ID: ${id})`);
+                send(`处理: ${fullDomain} (ID: ${id})`);
 
                 const res = await renew(id);
                 if (res?.success === true) {
-                  log(`✅ 续期成功: ${fullDomain}，新过期时间: ${res.new_expires_at}`);
+                  send(`✅ 续期成功: ${fullDomain}，新过期时间: ${res.new_expires_at}`);
                 } else {
-                  log(`❌ 续期失败: ${fullDomain}，原因: ${res?.message || "接口无响应/网络错误"}`);
+                  send(`❌ 续期失败: ${fullDomain}，原因: ${res?.message || "接口无响应/网络错误"}`);
                 }
-
                 await sleep(800);
               }
-
-              log("=== 全部完成 ===");
+              send("=== 全部完成 ===");
             } catch (e) {
-              log("异常：" + e.message);
+              send("异常：" + e.message);
             } finally {
               controller.close();
             }
@@ -73,12 +66,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    const log = console.log.bind(console);
-    ctx.waitUntil(autoRenewAll(log));
+    ctx.waitUntil(autoRenewAll(console.log));
   },
 };
 
-// 主续期逻辑
 async function autoRenewAll(log) {
   log("=== 开始续期 ===");
   const list = await listDomains(log);
@@ -102,7 +93,6 @@ async function autoRenewAll(log) {
   log("=== 全部完成 ===");
 }
 
-// 获取域名列表
 async function listDomains(log) {
   try {
     const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=subdomains&action=list`, {
@@ -129,7 +119,6 @@ async function listDomains(log) {
   }
 }
 
-// 续期
 async function renew(id) {
   try {
     const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=subdomains&action=renew`, {
@@ -152,7 +141,7 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 美化页面 + 实时逐行日志
+// 页面 + 修复按钮恢复
 function pageHtml() {
   return `
 <!DOCTYPE html>
@@ -237,34 +226,46 @@ function pageHtml() {
 <script>
 const btn = document.getElementById('btn');
 const logEl = document.getElementById('log');
+let es = null;
 
 function startRun() {
+  if (es) es.close();
+
   btn.disabled = true;
   btn.textContent = '执行中...';
   logEl.innerHTML = '';
 
-  const es = new EventSource('/run');
+  es = new EventSource('/run');
+
   es.onmessage = e => {
-    const line = e.data;
-    const escaped = escapeHtml(line);
+    const line = JSON.parse(e.data);
+    const txt = escapeHtml(line);
     if (line.includes('✅')) {
-      logEl.innerHTML += '<span class="log-success">' + escaped + '</span>\\n';
-    } else if (line.includes('❌') || line.includes('失败') || line.includes('错误') || line.includes('异常')) {
-      logEl.innerHTML += '<span class="log-error">' + escaped + '</span>\\n';
+      logEl.innerHTML += '<span class="log-success">' + txt + '</span><br>';
+    } else if (line.includes('❌') || line.includes('失败') || line.includes('错误')) {
+      logEl.innerHTML += '<span class="log-error">' + txt + '</span><br>';
     } else {
-      logEl.innerHTML += '<span class="log-normal">' + escaped + '</span>\\n';
+      logEl.innerHTML += '<span class="log-normal">' + txt + '</span><br>';
     }
     logEl.scrollTop = logEl.scrollHeight;
+
+    // 完成后恢复按钮
+    if (line.includes('全部完成') || line.includes('无活跃子域名')) {
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '开始续期';
+    }
   };
-  es.onerror = () => es.close();
-  es.onclose = () => {
+
+  es.onerror = () => {
+    es.close();
     btn.disabled = false;
     btn.textContent = '开始续期';
   };
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 </script>
 </body>
