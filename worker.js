@@ -224,7 +224,7 @@ function getHtmlPage() {
           logPanel.textContent += '✅ 任务已启动，实时日志如下：\\n';
         }
       } catch (e) {
-        logPanel.textContent += `❌ 任务启动失败: ${e.message}\\n`;
+        logPanel.textContent += '❌ 任务启动失败: ${e.message}\\n';
         clearInterval(logPolling);
         startBtn.disabled = false;
         startBtn.textContent = '开始手动续期';
