@@ -68,7 +68,7 @@ async function autoRenewAll() {
 // 获取域名列表
 async function listDomains() {
   try {
-    const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=dns_records&action=list`, {
+    const r = await fetch(`${API_HOST}/index.php?m=domain_hub&action=list`, {
       headers: {
         "X-API-Key": CONFIG.API_KEY,
         "X-API-Secret": CONFIG.API_SECRET,
@@ -82,14 +82,17 @@ async function listDomains() {
   }
 }
 
-// 续期（修复了 action=renew）
+// 续期：subdomain_id 放在 body 中
 async function renew(id) {
   try {
-    const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=dns_records&action=renew&subdomain_id=${id}`, {
+    const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=dns_records&action=renew`, {
+      method: "POST",
       headers: {
         "X-API-Key": CONFIG.API_KEY,
         "X-API-Secret": CONFIG.API_SECRET,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
+      body: `subdomain_id=${id}`
     });
     return await r.json();
   } catch (e) {
