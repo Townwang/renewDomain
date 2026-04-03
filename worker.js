@@ -134,26 +134,129 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 极简页面（保持不变，兼容手动触发）
+// 极简页面（美化版：居中、卡片、蓝按钮、彩色日志）
 function pageHtml() {
   return `
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>DNSHE 续期</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNSHE 自动续期</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    background-color: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container {
+    width: 100%;
+    max-width: 700px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+  }
+  h1 {
+    text-align: center;
+    font-size: 24px;
+    color: #1f2937;
+    margin-bottom: 24px;
+  }
+  .btn-run {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #fff;
+    background-color: #2563eb;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-run:hover {
+    background-color: #1d4ed8;
+  }
+  .log-card {
+    margin-top: 20px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px;
+    min-height: 200px;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .log-success {
+    color: #059669;
+    font-weight: 500;
+  }
+  .log-error {
+    color: #dc2626;
+    font-weight: 500;
+  }
+  .log-normal {
+    color: #1f2937;
+  }
+</style>
 </head>
 <body>
-<h1>DNSHE 自动续期</h1>
-<button onclick="run()">开始续期</button>
-<pre id="log" style="background:#f5f5f5;padding:10px;margin-top:10px;"></pre>
+  <div class="container">
+    <h1>DNSHE 自动续期</h1>
+    <button class="btn-run" onclick="run()">开始续期</button>
+    <div id="log" class="log-card">等待执行...</div>
+  </div>
 
 <script>
 async function run() {
-  document.getElementById('log').textContent = '执行中...';
-  const res = await fetch('/run');
-  const data = await res.json();
-  document.getElementById('log').textContent = data.logs.join('\\n');
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = '<span class="log-normal">执行中，请稍候...</span>';
+  
+  try {
+    const res = await fetch('/run');
+    const data = await res.json();
+    renderLogs(data.logs);
+  } catch (e) {
+    logEl.innerHTML = '<span class="log-error">请求失败：' + e + '</span>';
+  }
+}
+
+function renderLogs(logs) {
+  const logEl = document.getElementById('log');
+  let html = '';
+  logs.forEach(line => {
+    if (line.includes('✅') || line.includes('成功')) {
+      html += '<span class="log-success">' + escapeHtml(line) + '</span>\\n';
+    } else if (line.includes('❌') || line.includes('失败') || line.includes('错误') || line.includes('异常')) {
+      html += '<span class="log-error">' + escapeHtml(line) + '</span>\\n';
+    } else {
+      html += '<span class="log-normal">' + escapeHtml(line) + '</span>\\n';
+    }
+  });
+  logEl.innerHTML = html;
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 </script>
 </body>
