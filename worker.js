@@ -1,10 +1,9 @@
 const API_HOST = "https://api005.dnshe.com";
 
 // --------------- 配置 ---------------
-const VALID_DAYS = 365;        // 有效期 365 天
-const RENEW_BEFORE_DAYS = 180; // 剩余 ≤180 天才续期
+const VALID_DAYS = 365;        // 有效期固定 365 天
+const RENEW_BEFORE_DAYS = 180; // 只有 ≤180 天才续期
 const DAY_MS = 24 * 60 * 60 * 1000;
-const TIMEZONE_OFFSET = 8 * 60 * 60 * 1000; // 北京时间 UTC+8 偏移量
 
 export default {
   async fetch(request, env, ctx) {
@@ -39,42 +38,29 @@ export default {
 
                 send(`处理: ${fullDomain} (ID: ${id})`);
 
-                // 1. 解析北京时间的 updated_at
-                const [datePart, timePart] = updatedAtStr.split(" ");
-                const [year, month, day] = datePart.split("-").map(Number);
-                const [hour, minute, second] = timePart.split(":").map(Number);
-                // 手动构造北京时间 Date，避免时区自动转换
-                const updatedAt = new Date(Date.UTC(year, month - 1, day, hour - 8, minute, second));
-
+                // ====================== 时区矫正：北京时间 UTC+8 ======================
+                const updatedAt = new Date(updatedAtStr);
                 if (isNaN(updatedAt.getTime())) {
                   send(`⚠️ ${fullDomain} 时间格式错误，跳过`);
                   continue;
                 }
+                // 接口是北京时间，转成 UTC 时间
+                const updatedAtUtc = new Date(updatedAt.getTime() - 8 * 60 * 60 * 1000);
 
-                // 2. 获取当前 UTC 时间（Workers 原生时间）
                 const now = new Date();
-
-                // 3. 精确计算已过天数（向下取整，无浮点数误差）
-                const elapsedMs = now.getTime() - updatedAt.getTime();
-                const elapsedDays = Math.floor(elapsedMs / DAY_MS);
+                const elapsedDays = Math.floor((now - updatedAtUtc) / DAY_MS);
                 const remainingDays = VALID_DAYS - elapsedDays;
+                const realRemaining = Math.min(remainingDays, VALID_DAYS);
 
-                // 4. 强制封顶，杜绝 366 天
-                const realRemaining = Math.max(0, Math.min(remainingDays, VALID_DAYS));
-
-                send(`📅 已过 ${elapsedDays} 天 | 剩余 ${realRemaining} 天`);
+                send(`📅 剩余 ${realRemaining} 天`);
 
                 if (realRemaining > RENEW_BEFORE_DAYS) {
-                  send(`✅ 剩余 ${realRemaining} 天 > ${RENEW_BEFORE_DAYS}，无需续期`);
+                  send(`✅ 剩余 ${realRemaining} 天，无需续期`);
                   await sleep(300);
                   continue;
                 }
 
-                if (realRemaining <= 0) {
-                  send(`⚠️ ${fullDomain} 已过期，立即续期`);
-                } else {
-                  send(`🔍 剩余 ${realRemaining} 天，符合条件，开始续期`);
-                }
+                send(`🔍 剩余 ${realRemaining} 天，执行续期`);
 
                 const res = await renew(env, id);
                 if (res?.success === true) {
@@ -112,7 +98,6 @@ export default {
   },
 };
 
-// 定时任务逻辑
 async function autoRenewAll(env, log) {
   if (!env.API_KEY || !env.API_SECRET) {
     log("❌ API_KEY / API_SECRET 未配置");
@@ -133,35 +118,29 @@ async function autoRenewAll(env, log) {
 
     log(`处理: ${fullDomain} (ID: ${id})`);
 
-    const [datePart, timePart] = updatedAtStr.split(" ");
-    const [year, month, day] = datePart.split("-").map(Number);
-    const [hour, minute, second] = timePart.split(":").map(Number);
-    const updatedAt = new Date(Date.UTC(year, month - 1, day, hour - 8, minute, second));
-
+    // ====================== 时区矫正：北京时间 UTC+8 ======================
+    const updatedAt = new Date(updatedAtStr);
     if (isNaN(updatedAt.getTime())) {
       log(`⚠️ ${fullDomain} 时间格式错误，跳过`);
       continue;
     }
+    // 接口是北京时间，转成 UTC 时间
+    const updatedAtUtc = new Date(updatedAt.getTime() - 8 * 60 * 60 * 1000);
 
     const now = new Date();
-    const elapsedMs = now.getTime() - updatedAt.getTime();
-    const elapsedDays = Math.floor(elapsedMs / DAY_MS);
+    const elapsedDays = Math.floor((now - updatedAtUtc) / DAY_MS);
     const remainingDays = VALID_DAYS - elapsedDays;
-    const realRemaining = Math.max(0, Math.min(remainingDays, VALID_DAYS));
+    const realRemaining = Math.min(remainingDays, VALID_DAYS);
 
-    log(`📅 已过 ${elapsedDays} 天 | 剩余 ${realRemaining} 天`);
+    log(`📅 剩余 ${realRemaining} 天`);
 
     if (realRemaining > RENEW_BEFORE_DAYS) {
-      log(`✅ 剩余 ${realRemaining} 天 > ${RENEW_BEFORE_DAYS}，无需续期`);
+      log(`✅ 剩余 ${realRemaining} 天，无需续期`);
       await sleep(300);
       continue;
     }
 
-    if (realRemaining <= 0) {
-      log(`⚠️ ${fullDomain} 已过期，立即续期`);
-    } else {
-      log(`🔍 剩余 ${realRemaining} 天，执行续期`);
-    }
+    log(`🔍 剩余 ${realRemaining} 天，执行续期`);
 
     const res = await renew(env, id);
     if (res?.success === true) {
@@ -173,7 +152,6 @@ async function autoRenewAll(env, log) {
   }
 }
 
-// 获取域名列表
 async function listDomains(env, log) {
   try {
     const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=subdomains&action=list`, {
@@ -201,7 +179,6 @@ async function listDomains(env, log) {
   }
 }
 
-// 续期接口
 async function renew(env, id) {
   try {
     const r = await fetch(`${API_HOST}/index.php?m=domain_hub&endpoint=subdomains&action=renew`, {
@@ -225,7 +202,6 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 前端页面
 function pageHtml() {
   return `
 <!DOCTYPE html>
