@@ -1,4 +1,7 @@
 const API_HOST = "https://api005.dnshe.com";
+// 续期阈值：仅剩余 180 天以内才续期
+const RENEW_THRESHOLD_DAYS = 180;
+const DAY_MS = 24 * 60 * 60 * 1000; // 1天的毫秒数
 
 export default {
   async fetch(request, env, ctx) {
@@ -14,7 +17,7 @@ export default {
             };
 
             try {
-              // 先检查密钥
+              // 环境变量校验
               if (!env.API_KEY || !env.API_SECRET) {
                 send("❌ 错误：请在 Workers 环境变量中配置 API_KEY 和 API_SECRET");
                 return;
@@ -25,13 +28,40 @@ export default {
                 send("无活跃子域名");
                 return;
               }
-              send(`找到 ${list.length} 个活跃子域名`);
+              send(`找到 ${list.length} 个活跃子域名，仅剩余 ${RENEW_THRESHOLD_DAYS} 天以内的域名会续期`);
 
               for (const item of list) {
                 const id = item.id;
                 const fullDomain = item.full_domain;
+                const updatedAtStr = item.updated_at;
+
                 send(`处理: ${fullDomain} (ID: ${id})`);
 
+                // 1. 解析 updated_at 时间
+                const updatedAt = new Date(updatedAtStr);
+                if (isNaN(updatedAt.getTime())) {
+                  send(`⚠️ ${fullDomain} 的 updated_at 格式异常，跳过`);
+                  continue;
+                }
+
+                // 2. 计算剩余有效期（DNSHE 子域名有效期通常为 180 天，从 updated_at 起算）
+                const expireAt = new Date(updatedAt.getTime() + RENEW_THRESHOLD_DAYS * DAY_MS);
+                const now = new Date();
+                const remainingMs = expireAt.getTime() - now.getTime();
+                const remainingDays = Math.ceil(remainingMs / DAY_MS);
+
+                // 3. 判断是否需要续期
+                if (remainingDays <= 0) {
+                  send(`⚠️ ${fullDomain} 已过期，立即续期`);
+                } else if (remainingDays <= RENEW_THRESHOLD_DAYS) {
+                  send(`🔍 ${fullDomain} 剩余 ${remainingDays} 天，符合续期条件，执行续期`);
+                } else {
+                  send(`✅ ${fullDomain} 剩余 ${remainingDays} 天，无需续期，跳过`);
+                  await sleep(300); // 跳过的域名也加小延迟，避免接口限流
+                  continue;
+                }
+
+                // 4. 符合条件，执行续期
                 const res = await renew(env, id);
                 if (res?.success === true) {
                   send(`✅ 续期成功: ${fullDomain}，新过期时间: ${res.new_expires_at}`);
@@ -63,13 +93,13 @@ export default {
     });
   },
 
-  // 定时任务
+  // 定时任务：每 6 个月 1 号 0 点执行
   async scheduled(event, env, ctx) {
     ctx.waitUntil(autoRenewAll(env, console.log));
   },
 };
 
-// 自动续期逻辑
+// 自动续期逻辑（定时任务入口）
 async function autoRenewAll(env, log) {
   if (!env.API_KEY || !env.API_SECRET) {
     log("❌ API_KEY / API_SECRET 未配置");
@@ -81,12 +111,40 @@ async function autoRenewAll(env, log) {
     log("无活跃子域名");
     return;
   }
-  log(`找到 ${list.length} 个活跃子域名`);
+  log(`找到 ${list.length} 个活跃子域名，仅剩余 ${RENEW_THRESHOLD_DAYS} 天以内的域名会续期`);
 
   for (const item of list) {
     const id = item.id;
     const fullDomain = item.full_domain;
+    const updatedAtStr = item.updated_at;
+
     log(`处理: ${fullDomain} (ID: ${id})`);
+
+    // 解析 updated_at 时间
+    const updatedAt = new Date(updatedAtStr);
+    if (isNaN(updatedAt.getTime())) {
+      log(`⚠️ ${fullDomain} 的 updated_at 格式异常，跳过`);
+      continue;
+    }
+
+    // 计算剩余有效期
+    const expireAt = new Date(updatedAt.getTime() + RENEW_THRESHOLD_DAYS * DAY_MS);
+    const now = new Date();
+    const remainingMs = expireAt.getTime() - now.getTime();
+    const remainingDays = Math.ceil(remainingMs / DAY_MS);
+
+    // 判断是否需要续期
+    if (remainingDays <= 0) {
+      log(`⚠️ ${fullDomain} 已过期，立即续期`);
+    } else if (remainingDays <= RENEW_THRESHOLD_DAYS) {
+      log(`🔍 ${fullDomain} 剩余 ${remainingDays} 天，符合续期条件，执行续期`);
+    } else {
+      log(`✅ ${fullDomain} 剩余 ${remainingDays} 天，无需续期，跳过`);
+      await sleep(300);
+      continue;
+    }
+
+    // 执行续期
     const res = await renew(env, id);
     if (res?.success === true) {
       log(`✅ 续期成功: ${fullDomain}，新过期时间: ${res.new_expires_at}`);
@@ -175,11 +233,12 @@ h1{text-align:center;font-size:24px;color:#1e293b;margin-bottom:24px}
 .log-success{color:#059669;font-weight:500}
 .log-error{color:#dc2626;font-weight:500}
 .log-normal{color:#334155}
+.log-warning{color:#d97706;font-weight:500}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>DNSHE 自动续期</h1>
+  <h1>DNSHE 自动续期（仅180天内续期）</h1>
   <button class="btn-run" id="btn" onclick="startRun()">开始续期</button>
   <div id="log" class="log-card">等待执行...</div>
 </div>
@@ -200,6 +259,8 @@ function startRun(){
       logEl.innerHTML+='<span class="log-success">'+txt+'</span><br>'
     }else if(line.includes('❌')||line.includes('失败')||line.includes('错误')||line.includes('异常')){
       logEl.innerHTML+='<span class="log-error">'+txt+'</span><br>'
+    }else if(line.includes('⚠️')){
+      logEl.innerHTML+='<span class="log-warning">'+txt+'</span><br>'
     }else{
       logEl.innerHTML+='<span class="log-normal">'+txt+'</span><br>'
     }
