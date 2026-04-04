@@ -2,10 +2,6 @@ name = "renew"
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
-[vars]
-API_KEY = ""
-API_SECRET = ""
-
 # 每 6 个月 1 号 0 点执行（UTC 时间）
 [triggers]
 crons = [ "0 0 1 */6 *" ]
