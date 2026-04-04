@@ -1,8 +1,8 @@
 # DNSHE 免费域名自动续期工具
-![GitHub Stars](https://img.shields.io/github/stars/yourusername/dnshe-auto-renew?style=flat-square)
-![GitHub Forks](https://img.shields.io/github/forks/yourusername/dnshe-auto-renew?style=flat-square)
-![License](https://img.shields.io/github/license/yourusername/dnshe-auto-renew?style=flat-square)
-![Cloudflare Workers](https://img.shields.io/badge/Deploy%20To-Cloudflare%20Workers-orange?style=flat-square)
+[![GitHub Stars](https://img.shields.io/github/stars/yourusername/dnshe-auto-renew?style=flat-square)](https://github.com/Townwang/dnshe-auto-renew/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/yourusername/dnshe-auto-renew?style=flat-square)](https://github.com/Townwang/dnshe-auto-renew/network/members)
+[![License](https://img.shields.io/github/license/yourusername/dnshe-auto-renew?style=flat-square)](https://github.com/Townwang/dnshe-auto-renew/blob/main/LICENSE)
+[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20To-Cloudflare%20Workers-orange?style=flat-square)](https://workers.cloudflare.com)
 
 基于 **Cloudflare Workers** 搭建的零成本 DNSHE 免费二级域名自动续期工具，告别域名手动续期烦恼，支持网页手动触发+定时自动执行，密钥安全存储无泄露风险。
 
